@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Twitbook - A Web Application Workshop</title>
+  <link rel='stylesheet' href='/css/bootstrap.min.css' type='text/css'>
+  <link rel='stylesheet' href='/css/bootstrap-theme.min.css' type='text/css'>
+  <script type='text/javascript' src='/js/jquery.min.js'></script>
+  <script type='text/javascript' src='/js/bootstrap.min.js'></script>
+</head>
+<body>
+  <div class='container'>
+    <div class='row'>
+      <div class='col-md-12'>
+        <div class='page-header'>
+          <h1>Twitbook - A Web Application Workshop</h1>
+        </div>
+        <h3>Prerequisites</h3>
+        <p>This workshop will focus on building a social media web application using PHP, MySQL, Apache Server and the frontend framework bootstrap</p>
+        <p>First you will need a local server running MySQL and Apache server with PHP installed. On a windows machine it is easiest to use <a href='https://www.apachefriends.org/index.html'>XAMPP</a></p>
+        <p>If you want to use a linux machine follow the digital ocean tutorial for <a href='https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-on-ubuntu-16-04'>installing LAMP on Ubuntu</a></p>
+        <p>When you have your development environment setup, please create a database in MySQL and call it what you want.</p>
+        <pre>mysql> CREATE DATABASE <span style='color:red'>twitbook</span>;</pre>
+        <p>Also, for this tutorial we will be using Bootstrap...</p>
+        <h3>Bootstrap and frontend frameworks</h3>
+        <p>There are a few reasons for using a frontend framework</p>
+        <ol>
+          <li>Responsive web design</li>
+          <li>Produce frontend fast</li>
+          <li>Reusable components</li>
+        </ol>
+        <p>Why you might not want to use one</p>
+        <ol>
+          <li>Bulkier than a custom stylesheet</li>
+          <li>Design specification doesn't fit framework</li>
+          <li>Script incompatibility</li>
+        </ol>
+        <p>Whilst we will be using bootstrap there are some alternatives to use</p>
+        <ul>
+          <li>Foundation</li>
+          <li>w3.css</li>
+          <li>HTML Kickstart</li>
+          <li><a href='http://modernweb.com/2014/02/17/8-bootstrap-alternatives/'>and many more...</a></li>
+        </ul>
+        <h4>Bootstrap Basics</h4>
+        <p>The best place to look for bootstrap information is the <a href='http://getbootstrap.com/'>bootstrap website</a></p>
+        <h3>The Application</h3>
+        <p>For our application to be an app we need it to be able to do a few things. It needs to include:</p>
+        <ul>
+          <li>Signing Up</li>
+          <li>Logging In</li>
+          <li>Session Control</li>
+          <li>Logging Out</li>
+          <li>Following and adding members as friends</li>
+          <li>Public and Private messaging</li>
+          <li>User profiles</li>
+        </ul>
+        <p>We will break the project up into several php files. There will be a php file for each webpage, one for storing our functions, one for setting up the database and one more for user validation.</p>
+        <p>Lets first include bootstrap as part of the project. Go to the bootstrap website and download the full files for production. Bootstrap needs jquery to work, so you'll need to download jquery as well</p>
+        <h3>functions.php</h3>
+        <p>First we'll start creating ou functions. For simplicity we'll keep the database connection in this file as well.</p>
+        <div class='panel panel-default'><div class='panel-body'><xmp>
+          <?php
+            $dbhost  = 'localhost';
+            $dbname  = 'twitbook';
+            $dbuser  = 'root';
+            $dbpass  = '';
+            $appname = 'twitbook';
+
+            $connection = new mysqli($dbhost, $dbuser, $dbpass, $dbname);
+            if ($connection->connect_error) die($connection->connect_error);
+
+            function createTable($name, $query)
+            {
+              queryMysql("CREATE TABLE IF NOT EXISTS $name($query)");
+              echo "Table '$name' created or already exists.<br>";
+            }
+
+            function queryMysql($query)
+            {
+              global $connection;
+              $result = $connection->query($query);
+              if (!$result) die($connection->error);
+              return $result;
+            }
+
+            function destroySession()
+            {
+              $_SESSION=array();
+
+              if (session_id() != "" || isset($_COOKIE[session_name()]))
+                setcookie(session_name(), '', time()-2592000, '/');
+
+              session_destroy();
+            }
+
+            function sanitizeString($var)
+            {
+              global $connection;
+              $var = strip_tags($var);
+              $var = htmlentities($var);
+              $var = stripslashes($var);
+              return $connection->real_escape_string($var);
+            }
+
+            function showProfile($user)
+            {
+              if (file_exists("$user.jpg"))
+                echo "<img src='$user.jpg' style='float:left;'>";
+
+              $result = queryMysql("SELECT * FROM profiles WHERE user='$user'");
+
+              if ($result->num_rows)
+              {
+                $row = $result->fetch_array(MYSQLI_ASSOC);
+                echo stripslashes($row['text']) . "<br style='clear:left;'><br>";
+              }
+            }
+          ?>
+
+        </xmp></div></div>
+        <p><strong>createTable</strong> checks to see if a table exists, and if not, creates it.</p>
+        <p><strong>queryMysql</strong> Issues a query to MySQL, outputting an error message if it fails.</p>
+        <p><strong>destroySession</strong> My favourite. Used for when a user logs out. It destroys the PHP session and clears its data.</p>
+        <p><strong>sanitizeString</strong> Cleans input to prevent injections from user</p>
+        <p><strong>showProfile</strong> Use this to show the user's image and about me message if the user has one</p>
+        <h3>header.php</h3>
+        <p>Each page of the application will have some of the same things loaded into it. Rather than coping this out several times over, we can just create a file to store it in, then include the file in each page.</p>
+        <p>Our header file will contain a page title, the stylesheets, the scripts and the navigation for each webpage</p>
+        <div class='panel panel-default'><div class='panel-body'><xmp>
+          <?php
+            session_start();
+
+            echo "<!DOCTYPE html>\n<html><head>";
+
+            require_once 'functions.php';
+
+            $userstr = ' (Guest)';
+
+            if (isset($_SESSION['user']))
+            {
+              $user     = $_SESSION['user'];
+              $loggedin = TRUE;
+              $userstr  = " ($user)";
+            }
+            else $loggedin = FALSE;
+
+            echo "<title>$appname$userstr</title>"                     .
+                 "<link rel='stylesheet' type='text/css' href='/css/bootstrap.min.css'>".
+                 "<link rel='stylesheet' type='text/css' href='/css/bootstrap-theme.min.css'>".
+                 "<link rel='stylesheet' type='text/css' href='/css/style.css'>".
+                 "<script type='text/javascript' src='/js/jquery.min.js'></script>".
+                 "<script type='text/javascript' src='/js/bootstrap.min.js'></script>".
+                 "<script type='text/javascript' src='/js/script.js'></script>".
+                 "</head><body>"             .
+                 "<div class='page-header-container container-fluid'>".
+                    "<div class='page-header'>".
+                      "<h1 class='text-center'>$appname <small>$userstr</small></h1>".
+                    "</div>".
+                  "</div>"         .
+                 "<script src='javascript.js'></script>".
+                 "<div class='container'><div class='row'><div class='col-md-12'>".
+                 "<nav class='navbar navbar-default'>".
+                 "<ul class='nav navbar-nav'>";
+
+            if ($loggedin)
+            {
+              echo "<li><a href='members.php?view=$user'>Home</a></li>" .
+                   "<li><a href='members.php'>Members</a></li>"         .
+                   "<li><a href='friends.php'>Friends</a></li>"         .
+                   "<li><a href='messages.php'>Messages</a></li>"       .
+                   "<li><a href='profile.php'>Edit Profile</a></li>"    .
+                   "<li><a href='logout.php'>Log out</a></li></ul></nav></div></div></div>";
+            }
+            else
+            {
+              echo  "<li><a href='index.php'>Home</a></li>"                .
+                    "<li><a href='signup.php'>Sign up</a></li>"            .
+                    "<li><a href='login.php'>Log in</a></li></ul></nav>"     .
+                    "<h3 class='text-center bg-danger'>&#8658; You must be logged in to " .
+                    "view this page.</h3></div></div></div>";
+            }
+          ?>
+        </xmp></div></div>
+        <p>The first thing to happen is session_start() is called which is a built in PHP function for session handling. Then we establish whether or not a user is logged in and then display a navigation based on this information</p>
+        <h3>setup.php</h3>
+        <p>One of the most useful tools in the web developers arsenal is an installtion file. You can use this file to recreate a database rapidly during development. They can also be used in production for mass deployment if selling software licenses</p>
+        <p>This file contains a simple implentation of an installtion script</p>
+        <div class='panel panel-default'><div class='panel-body'><xmp>
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Setting up database</title>
+            </head>
+            <body>
+
+              <h3>Setting up...</h3>
+
+          <?php
+            require_once 'functions.php';
+
+            createTable('members',
+                        'user VARCHAR(16),
+                        pass VARCHAR(16),
+                        INDEX(user(6))');
+
+            createTable('messages',
+                        'id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                        auth VARCHAR(16),
+                        recip VARCHAR(16),
+                        pm CHAR(1),
+                        time INT UNSIGNED,
+                        message VARCHAR(4096),
+                        INDEX(auth(6)),
+                        INDEX(recip(6))');
+
+            createTable('friends',
+                        'user VARCHAR(16),
+                        friend VARCHAR(16),
+                        INDEX(user(6)),
+                        INDEX(friend(6))');
+
+            createTable('profiles',
+                        'user VARCHAR(16),
+                        text VARCHAR(4096),
+                        INDEX(user(6))');
+          ?>
+
+              <br>...done.
+            </body>
+          </html>
+        </xmp></div></div>
+        <p>By including our functions.php file we can use our existing createTable function to make tables in the database</p>
+        <h3>index.php</h3>
+        <p>When accessing a website, if no file is specified, the server defaults to an index file. By naming a file index (with anyextension) the serve will deliver this file</p>
+        <p><strong>Note:</strong> if there are two files named index but with different extensions the server will give priority to one depending upon server settings</p>
+        <p>Our index file will contain a message to the user, telling them they are logged in or they need to login/sign up</p>
+        <div class='panel panel-default'><div class='panel-body'><xmp>
+          <?php
+            require_once 'header.php';
+
+            echo "<div class='container'><div class='row'><div class='col-md-12'><h1 class='text-center'>Welcome to $appname</h1>";
+
+            if ($loggedin) echo "<p class='text-center'>$user, you are logged in.</p>";
+            else           echo "<p class='text-center'>please <a href='signup.php'>sign up</a> and/or <a href='login.php'>log in</a> to join in.</p>";
+          ?>
+                  </div>
+                </div>
+              </div>
+            </body>
+          </html>
+        </xmp></div></div>
+        <p>You should notice the bottom of the page includes the closing tags corresponding to our header.php file</p>
+        <h3>signup.php</h3>
+        <p>Users need to be able to signup</p>
+        <div class='panel panel-default'><div class='panel-body'><xmp>
+          <?php
+            require_once 'header.php';
+
+            echo <<<_END
+            <script>
+              function checkUser(user)
+              {
+                if (user.value == '')
+                {
+                  O('info').innerHTML = ''
+                  return
+                }
+
+                params  = "user=" + user.value
+                request = new ajaxRequest()
+                request.open("POST", "checkuser.php", true)
+                request.setRequestHeader("Content-type", "application/x-www-form-urlencoded")
+                request.setRequestHeader("Content-length", params.length)
+                request.setRequestHeader("Connection", "close")
+
+                request.onreadystatechange = function()
+                {
+                  if (this.readyState == 4)
+                    if (this.status == 200)
+                      if (this.responseText != null)
+                        O('info').innerHTML = this.responseText
+                }
+                request.send(params)
+              }
+
+              function ajaxRequest()
+              {
+                try { var request = new XMLHttpRequest() }
+                catch(e1) {
+                  try { request = new ActiveXObject("Msxml2.XMLHTTP") }
+                  catch(e2) {
+                    try { request = new ActiveXObject("Microsoft.XMLHTTP") }
+                    catch(e3) {
+                      request = false
+                } } }
+                return request
+              }
+            </script>
+            <div class='container'><div class='row'><div class='col-sm-12 col-md-6'><h3>Please enter your details to sign up</h3>
+          _END;
+
+            $error = $user = $pass = "";
+            if (isset($_SESSION['user'])) destroySession();
+
+            if (isset($_POST['user']))
+            {
+              $user = sanitizeString($_POST['user']);
+              $pass = sanitizeString($_POST['pass']);
+
+              if ($user == "" || $pass == "")
+                $error = "Not all fields were entered<br><br>";
+              else
+              {
+                $result = queryMysql("SELECT * FROM members WHERE user='$user'");
+
+                if ($result->num_rows)
+                  $error = "That username already exists<br><br>";
+                else
+                {
+                  queryMysql("INSERT INTO members VALUES('$user', '$pass')");
+                  die("<h4>Account created</h4>Please Log in.<br><br>");
+                }
+              }
+            }
+
+            echo <<<_END
+              <form class='form' method='post' action='signup.php'>$error
+              <div class='form-group'>
+                <label>Username <span class='bg-info' id='info'></span></label>
+                <input class='form-control' type='text' maxlength='16' name='user' value='$user'
+                onBlur='checkUser(this)'>
+              </div>
+              <div class='form-group'>
+                <label>Password</label>
+                <input class='form-control' type='password' maxlength='16' name='pass'
+                value='$pass'>
+              </div>
+          _END;
+          ?>
+              <div class='form-group'>
+                <input class='btn btn-success form-control' type='submit' value='Sign up'>
+              </div>
+              </form></div></div></div>
+            </body>
+          </html>
+        </xmp></div></div>
+        <p>In this file we are using echo <<<_END to write a large amount of html and embedded javascript. we'll be writing some more javascript later and putting it in its own file.</p>
+        <p>Within this file we have a html form that posts to signup.php, which is a file posting to itself. This saves redirecting the user to another page. In this implentation the user has not yet been logged in and will need to do so to create the new session</p>
+        <h3>checkuser.php</h3>
+        <p>Within this file will needed to call a function called checkUser(). However, this function was not included in the functions.php file as it only applies to this form.</p>
+        <div class='panel panel-default'><div class='panel-body'><xmp>
+          <?php
+            require_once 'functions.php';
+
+            if (isset($_POST['user']))
+            {
+              $user   = sanitizeString($_POST['user']);
+              $result = queryMysql("SELECT * FROM members WHERE user='$user'");
+
+              if ($result->num_rows)
+                echo  "<span class='taken'>&nbsp;&#x2718; " .
+                      "This username is taken</span>";
+              else
+                echo "<span class='available'>&nbsp;&#x2714; " .
+                     "This username is available</span>";
+            }
+          ?>
+        </xmp></div></div>
+        <p>This script compares the user to all those in the database and returns whether the name has been taken or not</p>
+        <h3>login.php</h3>
+        <p>Now that users can be created they need to be able to login.</p>
+        <div class='panel panel-default'><div class='panel-body'><xmp>
+          <?php
+            require_once 'header.php';
+            echo "<div class='container'><div class='row'><div class='col-md-6 col-sm-12'><h3>Please enter your details to log in</h3>";
+            $error = $user = $pass = "";
+
+            if (isset($_POST['user']))
+            {
+              $user = sanitizeString($_POST['user']);
+              $pass = sanitizeString($_POST['pass']);
+
+              if ($user == "" || $pass == "")
+                  $error = "Not all fields were entered<br>";
+              else
+              {
+                $result = queryMySQL("SELECT user,pass FROM members
+                  WHERE user='$user' AND pass='$pass'");
+
+                if ($result->num_rows == 0)
+                {
+                  $error = "<span class=bg-danger'>Username/Password
+                            invalid</span>";
+                }
+                else
+                {
+                  $_SESSION['user'] = $user;
+                  $_SESSION['pass'] = $pass;
+                  die("You are now logged in. Please <a href='members.php?view=$user'>" .
+                      "click here</a> to continue.");
+                }
+              }
+            }
+
+            echo <<<_END
+              <form class='form' method='post' action='login.php'>$error
+              <div class='form-group'>
+                <label>Username</label>
+                <input class='form-control' type='text' maxlength='16' name='user' value='$user'>
+              </div>
+              <div class='form-group'>
+                <label>Password</label>
+                <input class='form-control' type='password' maxlength='16' name='pass' value='$pass'>
+              </div>
+          _END;
+          ?>
+
+              <div class='form-group'>
+                <input class='form-control btn btn-success'type='submit' value='Login'>
+              </div>
+            </form></div></div></div>
+            </body>
+          </html>
+        </xmp></div></div>
+        <p>This file is similar to our signup.php file</p>
+        <h3>profile.php</h3>
+        <p>Now that our users can login, they need to be able to create their profile. Part of their profile is an image and this file will allow us to upload images. <strong>Note:</strong>If using a remote server you may experience issues here with file uploads due to server settings protecting the file system.</p>
+        <div class='panel panel-default'><div class='panel-body'><xmp>
+          <?php
+            require_once 'header.php';
+
+            if (!$loggedin) die();
+
+            echo "<div class='container'><div class='row'><div class='col-md-12'><h1>Your Profile</h1>";
+
+            $result = queryMysql("SELECT * FROM profiles WHERE user='$user'");
+
+            if (isset($_POST['text']))
+            {
+              $text = sanitizeString($_POST['text']);
+              $text = preg_replace('/\s\s+/', ' ', $text);
+
+              if ($result->num_rows)
+                   queryMysql("UPDATE profiles SET text='$text' where user='$user'");
+              else queryMysql("INSERT INTO profiles VALUES('$user', '$text')");
+            }
+            else
+            {
+              if ($result->num_rows)
+              {
+                $row  = $result->fetch_array(MYSQLI_ASSOC);
+                $text = stripslashes($row['text']);
+              }
+              else $text = "";
+            }
+
+            $text = stripslashes(preg_replace('/\s\s+/', ' ', $text));
+
+            if (isset($_FILES['image']['name']))
+            {
+              $saveto = "$user.jpg";
+              move_uploaded_file($_FILES['image']['tmp_name'], $saveto);
+              $typeok = TRUE;
+
+              switch($_FILES['image']['type'])
+              {
+                case "image/gif":   $src = imagecreatefromgif($saveto); break;
+                case "image/jpeg":  // Both regular and progressive jpegs
+                case "image/pjpeg": $src = imagecreatefromjpeg($saveto); break;
+                case "image/png":   $src = imagecreatefrompng($saveto); break;
+                default:            $typeok = FALSE; break;
+              }
+
+              if ($typeok)
+              {
+                list($w, $h) = getimagesize($saveto);
+
+                $max = 100;
+                $tw  = $w;
+                $th  = $h;
+
+                if ($w > $h && $max < $w)
+                {
+                  $th = $max / $w * $h;
+                  $tw = $max;
+                }
+                elseif ($h > $w && $max < $h)
+                {
+                  $tw = $max / $h * $w;
+                  $th = $max;
+                }
+                elseif ($max < $w)
+                {
+                  $tw = $th = $max;
+                }
+
+                $tmp = imagecreatetruecolor($tw, $th);
+                imagecopyresampled($tmp, $src, 0, 0, 0, 0, $tw, $th, $w, $h);
+                imageconvolution($tmp, array(array(-1, -1, -1),
+                  array(-1, 16, -1), array(-1, -1, -1)), 8, 0);
+                imagejpeg($tmp, $saveto);
+                imagedestroy($tmp);
+                imagedestroy($src);
+              }
+            }
+
+            showProfile($user);
+
+            echo <<<_END
+              <form class='form' method='post' action='profile.php' enctype='multipart/form-data'>
+                <div class='form-group'>
+                  <label>Enter or edit your details and/or upload an image</label>
+                  <textarea class='form-control' name='text' cols='50' rows='3'>$text</textarea>
+                </div>
+          _END;
+          ?>
+              <div class='form-group'>
+                Image: <input type='file' name='image'>
+              </div>
+              <div class='form-group'>
+                <input class='btn btn-success' type='submit' value='Save Profile'>
+              </div>
+            </form></div></div></div>
+            </body>
+          </html>
+        </xmp></div></div>
+        <p>This process here is more complicated than a typical file upload. I've placed another php file called upload.php to show how to do it simply. Within profile.php we are saving the image to the server and therefore need to make modifications to the image for storage efficiency.</p>
+        <p>here we are specifiying a maximum dimension for images to be stored by modifying the image. Also, we need to record the location of the image in the database</p>
+        <h3>members.php</h3>
+        <p>Our application won't be very social if we can't see and interact with other people. For this we have the members.php page. This page will display users and let us follow them.</p>
+        <div class='panel panel-default'><div class='panel-body'><xmp>
+          <?php
+            require_once 'header.php';
+
+            if (!$loggedin) die();
+
+            echo "<div class='container'><div class='row'><div class='col-md-12'>";
+
+            if (isset($_GET['view']))
+            {
+              $view = sanitizeString($_GET['view']);
+
+              if ($view == $user) $name = "Your";
+              else                $name = "$view's";
+
+              echo "<h3>$name Profile</h3>";
+              showProfile($view);
+              echo "<a class='button' href='messages.php?view=$view'>" .
+                   "View $name messages</a><br><br>";
+              die("</div></body></html>");
+            }
+
+            if (isset($_GET['add']))
+            {
+              $add = sanitizeString($_GET['add']);
+
+              $result = queryMysql("SELECT * FROM friends WHERE user='$add' AND friend='$user'");
+              if (!$result->num_rows)
+                queryMysql("INSERT INTO friends VALUES ('$add', '$user')");
+            }
+            elseif (isset($_GET['remove']))
+            {
+              $remove = sanitizeString($_GET['remove']);
+              queryMysql("DELETE FROM friends WHERE user='$remove' AND friend='$user'");
+            }
+
+            $result = queryMysql("SELECT user FROM members ORDER BY user");
+            $num    = $result->num_rows;
+
+            echo "<h3>Other Members</h3><table class='table'><thead><tr><th>User</th><th>Action</th></tr></thead><tbody>";
+
+            for ($j = 0 ; $j < $num ; ++$j)
+            {
+              $row = $result->fetch_array(MYSQLI_ASSOC);
+              if ($row['user'] == $user) continue;
+
+              echo "<tr><td><a class='btn btn-info' href='members.php?view=" .
+                $row['user'] . "'>" . $row['user'] . "</a></td><td>";
+              $follow = "follow</td></tr>";
+
+              $result1 = queryMysql("SELECT * FROM friends WHERE
+                user='" . $row['user'] . "' AND friend='$user'");
+              $t1      = $result1->num_rows;
+              $result1 = queryMysql("SELECT * FROM friends WHERE
+                user='$user' AND friend='" . $row['user'] . "'");
+              $t2      = $result1->num_rows;
+
+              if (($t1 + $t2) > 1) echo " &harr; is a mutual friend";
+              elseif ($t1)         echo " &larr; you are following";
+              elseif ($t2)       { echo " &rarr; is following you";
+                $follow = "recip"; }
+
+              if (!$t1) echo " <a class='btn btn-success' href='members.php?add="   .$row['user'] . "'>$follow</a>";
+              else      echo " <a class='btn btn-danger' href='members.php?remove=".$row['user'] . "'>drop</a>";
+            }
+          ?>
+
+              </tbody></table></ul></div></div></div>
+            </body>
+          </html>
+        </xmp></div></div>
+        <p>In this page we are querying the database for all users not including the current user, and displaying a html row for each MySQL row returned. It also offers the option to follow someone or stop following them as well as information on their relationship with the current user.</p>
+        <h3>friends.php</h3>
+        <p>This page is for people you are following, people following you and both. It's similiar to the members page, but instead of creating tables we are creating bootstrap grid elements for responsive display</p>
+        <div class='panel panel-default'><div class='panel-body'><xmp>
+          <?php
+            require_once 'header.php';
+
+            if (!$loggedin) die();
+
+            if (isset($_GET['view'])) $view = sanitizeString($_GET['view']);
+            else                      $view = $user;
+
+            if ($view == $user)
+            {
+              $name1 = $name2 = "Your";
+              $name3 =          "You are";
+            }
+            else
+            {
+              $name1 = "<a class='btn btn-info' href='members.php?view=$view'>$view</a>'s";
+              $name2 = "$view's";
+              $name3 = "$view is";
+            }
+
+            echo "<div class='container'><div class='row'><div class='col-md-12'>";
+
+            $followers = array();
+            $following = array();
+
+            $result = queryMysql("SELECT * FROM friends WHERE user='$view'");
+            $num    = $result->num_rows;
+
+            for ($j = 0 ; $j < $num ; ++$j)
+            {
+              $row           = $result->fetch_array(MYSQLI_ASSOC);
+              $followers[$j] = $row['friend'];
+            }
+
+            $result = queryMysql("SELECT * FROM friends WHERE friend='$view'");
+            $num    = $result->num_rows;
+
+            for ($j = 0 ; $j < $num ; ++$j)
+            {
+                $row           = $result->fetch_array(MYSQLI_ASSOC);
+                $following[$j] = $row['user'];
+            }
+
+            $mutual    = array_intersect($followers, $following);
+            $followers = array_diff($followers, $mutual);
+            $following = array_diff($following, $mutual);
+            $friends   = FALSE;
+
+            if (sizeof($mutual))
+            {
+              echo "<h2 class='text-center'>$name2 mutual friends</h2><div class='row'>";
+              foreach($mutual as $friend){
+                if (file_exists("$friend.jpg"))
+                  echo "<div class='col-xs-6 col-md-3'>".
+                        "<a href='members.php?view=$friend' class='thumbnail'>".
+                        "<img src='$friend.jpg' alt='$friend'>".
+                        "</a>".
+                        "<div class='caption'>".
+                        "<a class='btn btn-info btn-block btn-lg' href='members.php?view=$friend'>$friend</a>".
+                        "</div>".
+                        "</div>";
+                else
+                  echo "<div class='col-xs-6 col-md-3'><a class='btn btn-info btn-block btn-lg' href='members.php?view=$friend'>$friend</a></div>";
+              }
+              echo "</div><br>";
+              $friends = TRUE;
+            }
+
+            if (sizeof($followers))
+            {
+              echo "<h2 class='text-center'>$name2 followers</h2><div class='row'>";
+              foreach($followers as $friend){
+                if (file_exists("$friend.jpg"))
+                  echo "<div class='col-xs-6 col-md-3'>".
+                        "<a href='members.php?view=$friend' class='thumbnail'>".
+                        "<img src='$friend.jpg' alt='$friend'>".
+                        "</a>".
+                        "<div class='caption'>".
+                        "<a class='btn btn-info btn-block btn-lg' href='members.php?view=$friend'>$friend</a>".
+                        "</div>".
+                        "</div>";
+                else
+                  echo "<div class='col-xs-6 col-md-3'><a class='btn btn-info btn-block btn-lg' href='members.php?view=$friend'>$friend</a></div>";
+              }
+              echo "</div><br>";
+              $friends = TRUE;
+            }
+
+            if (sizeof($following))
+            {
+              echo "<h2 class='text-center'>$name3 following</h2><div class='row'>";
+              foreach($following as $friend){
+                if (file_exists("$friend.jpg"))
+                  echo "<div class='col-xs-6 col-md-3'>".
+                        "<a href='members.php?view=$friend' class='thumbnail'>".
+                        "<img src='$friend.jpg' alt='$friend'>".
+                        "</a>".
+                        "<div class='caption'>".
+                        "<a class='btn btn-info btn-block btn-lg' href='members.php?view=$friend'>$friend</a>".
+                        "</div>".
+                        "</div>";
+                else
+                  echo "<div class='col-xs-6 col-md-3'><a class='btn btn-info btn-block btn-lg' href='members.php?view=$friend'>$friend</a></div>";
+              }
+              echo "</div><br>";
+              $friends = TRUE;
+            }
+
+            if (!$friends) echo "<div class='row'><div class='col-md-12'><h4 class='bg-warning'>You don't have any friends yet.<h4></div></div><br>";
+
+            echo "<div class='row'><div class='col-md-12'><a class='btn btn-info' href='messages.php?view=$view'>" .
+                 "View $name2 messages</a></div></div>";
+          ?>
+
+              </div></div></div>
+            </body>
+          </html>
+        </xmp></div></div>
+        <h3>messages.php</h3>
+        <p>Part of the application is sending and recieving messages. We want to be able to post on our own as well as other peoples profiles, and also decide if they are private or public.</p>
+        <div class='panel panel-default'><div class='panel-body'><xmp>
+          <?php
+            require_once 'header.php';
+
+            if (!$loggedin) die();
+
+            if (isset($_GET['view'])) $view = sanitizeString($_GET['view']);
+            else                      $view = $user;
+
+            if (isset($_POST['text']))
+            {
+              $text = sanitizeString($_POST['text']);
+
+              if ($text != "")
+              {
+                $pm   = substr(sanitizeString($_POST['pm']),0,1);
+                $time = time();
+                queryMysql("INSERT INTO messages VALUES(NULL, '$user',
+                  '$view', '$pm', $time, '$text')");
+              }
+            }
+
+            if ($view != "")
+            {
+              if ($view == $user) $name1 = $name2 = "Your";
+              else
+              {
+                $name1 = "<a href='members.php?view=$view'>$view</a>'s";
+                $name2 = "$view's";
+              }
+
+              echo "<div class='container'><div class='row'><div class='col-md-12'><h1>$name1 Messages</h1>";
+              showProfile($view);
+
+              echo <<<_END
+                <form class='form' method='post' action='messages.php?view=$view'>
+                <div class='form-group'>
+                  <label>Type here to leave a message</label>
+                  <textarea class='form-control' name='text' cols='40' rows='3'></textarea>
+                  Public<input type='radio' name='pm' value='0' checked='checked'>
+                  Private<input type='radio' name='pm' value='1'>
+                </div>
+                <div class='form-group'>
+                  <input class='btn btn-success' type='submit' value='Post Message'>
+                </div></form>
+          _END;
+
+              if (isset($_GET['erase']))
+              {
+                $erase = sanitizeString($_GET['erase']);
+                queryMysql("DELETE FROM messages WHERE id=$erase AND recip='$user'");
+              }
+
+              $query  = "SELECT * FROM messages WHERE recip='$view' ORDER BY time DESC";
+              $result = queryMysql($query);
+              $num    = $result->num_rows;
+
+              for ($j = 0 ; $j < $num ; ++$j)
+              {
+                $row = $result->fetch_array(MYSQLI_ASSOC);
+
+                if ($row['pm'] == 0 || $row['auth'] == $user || $row['recip'] == $user)
+                {
+                  echo date('M jS \'y g:ia:', $row['time']);
+                  echo " <a href='messages.php?view=" . $row['auth'] . "'>" . $row['auth']. "</a> ";
+
+                  if ($row['pm'] == 0)
+                    echo "wrote: &quot;" . $row['message'] . "&quot; ";
+                  else
+                    echo "whispered: <span class='whisper'>&quot;" .
+                      $row['message']. "&quot;</span> ";
+
+                  if ($row['recip'] == $user)
+                    echo "[<a href='messages.php?view=$view" .
+                         "&erase=" . $row['id'] . "'>erase</a>]";
+
+                  echo "<br>";
+                }
+              }
+            }
+
+            if (!$num) echo "<br><span class='bg-info'>No messages yet</span><br><br>";
+
+            echo "<br><a class='btn btn-info' href='messages.php?view=$view'>Refresh messages</a>";
+          ?>
+
+              </div></div></div>
+            </body>
+          </html>
+        </xmp></div></div>
+        <h3>logout.php</h3>
+        <p>Finally, our user needs to be able to logout to close their session. This simple script will use destroySession and then output a page confirming this.</p>
+        <div class='panel panel-default'><div class='panel-body'><xmp>
+          <?php
+            require_once 'header.php';
+
+            if (isset($_SESSION['user']))
+            {
+              destroySession();
+              echo "<div class='container'><div class='row'><div class='col-md-12'><p class='text-center'>You have been logged out. Please " .
+                   "<a href='index.php'>click here</a> to refresh the screen.</p>";
+            }
+            else echo "<div class='container'><div class='row'><div class='col-md-12'>" .
+                      "<p class='text-center'>You cannot log out because you are not logged in";
+          ?>
+
+              </div></div></div>
+            </body>
+          </html>
+        </xmp></div></div>
+        <h3>Finishing touches</h3>
+        <p>We'll want to include some javascript to ensure our functions work. Create script.js in the js folder</p>
+        <pre>
+          function O(i) { return typeof i == 'object' ? i : document.getElementById(i) }
+          function S(i) { return O(i).style                                            }
+          function C(i) { return document.getElementsByClassName(i)                    }
+        </pre>
+        <p>This follows up some of the functions we used previously such as 0() in signup.php where we inject html into the document.</p>
+        <p>Finally, you can modify the styles of the application to how you see fit. Using bootstrap has given us responsiveness and a site structure but at current the site is bland. Start adding your own styles in a custom stylesheet.</p>
+        
+      </div>
+    </div>
+  </div>
+</body>
+</html>
